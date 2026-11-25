@@ -150,15 +150,21 @@ const TEACHER_CODE='힁힁짖는물개'; // 로컬 테스트용. 구글 시트 �
 const nowS=()=>{const d=new Date(),p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`};
 const load=()=>ls('pp_db')||{letters:{},replies:{},topic:''};
 const store=d=>ls('pp_db',d);
-function pubL(l){return l&&{id:l.id,cls:l.cls,nick:l.nick,avatar:l.avatar,title:l.title||'',text:l.text,chars:l.chars,status:l.status,savedAt:l.savedAt,sentAt:l.sentAt,partner:l.partner||''}}
+function pubL(l){return l&&{id:l.id,cls:l.cls,nick:l.nick,avatar:l.avatar,title:l.title||'',nickChanged:!!l.nickChanged,text:l.text,chars:l.chars,status:l.status,savedAt:l.savedAt,sentAt:l.sentAt,partner:l.partner||''}}
 function handle(q){
  const D=load(),a=q.action,L=D.letters,R=D.replies;D.archive=D.archive||[];
  const fold=()=>{const m={};D.archive.forEach(r=>{(m[r.rd]=m[r.rd]||{rd:r.rd,topic:r.topic,count:0}).count++});return Object.values(m).sort((x,y)=>y.rd-x.rd)};
  const me=()=>{const l=L[q.id];if(!l||String(l.pin)!==String(q.pin))throw new Error('비밀번호가 맞지 않아요');return l};
- if(a==='login'){const ex=L[q.id];
+ if(a==='login'){const nk=String(q.nick||'').trim().slice(0,10),ex=Object.values(L).find(l=>l.nick===nk);
   if(ex){if(ex.pin!==q.pin)throw new Error('이미 있는 닉네임이에요. 비밀번호를 확인하거나 다른 닉네임을 써요');if(q.name&&!ex.name)ex.name=q.name}
-  else L[q.id]={id:q.id,cls:q.cls,nick:q.nick,name:q.name||'',pin:q.pin,avatar:q.avatar,text:'',chars:0,status:'new',partner:''};
-  store(D);return{letter:pubL(L[q.id]),topic:D.topic,returning:!!ex,archiveCount:fold().length}}
+  else{const id='u_'+Math.random().toString(36).slice(2,10);L[id]={id,cls:'',nick:nk,name:q.name||'',pin:q.pin,avatar:q.avatar,text:'',chars:0,status:'new',partner:''}}
+  const cur=ex||Object.values(L).find(l=>l.nick===nk);
+  store(D);return{letter:pubL(cur),topic:D.topic,returning:!!ex,archiveCount:fold().length}}
+ if(a==='changeNick'){const l=me(),nk=String(q.newNick||'').trim().slice(0,10);
+  if(!nk)throw new Error('새 닉네임을 입력해 주세요');
+  if(l.nickChanged)throw new Error('이번 주제에서는 이미 닉네임을 바꿨어요. 다음 주제에 다시 바꿀 수 있어요');
+  if(Object.values(L).some(x=>x.nick===nk&&x.id!==l.id))throw new Error('이미 쓰고 있는 닉네임이에요. 다른 닉네임을 써요');
+  l.nick=nk;l.nickChanged='1';if(R[l.id])R[l.id].nick=nk;store(D);return{letter:pubL(l)}}
  if(a==='me'){return{letter:pubL(me()),topic:D.topic,archiveCount:fold().length}}
  if(a==='archive'){me();return{folders:fold()}}
  if(a==='archiveRound'){me();return{items:D.archive.filter(r=>String(r.rd)===String(q.rd))}}
@@ -184,7 +190,7 @@ function handle(q){
   if(sent.length){const rd=1+Math.max(0,...D.archive.map(r=>+r.rd||0)),t=nowS(),tp=D.topic||'(주제 없음)';
    sent.forEach(l=>{const rp=Object.values(R).find(x=>String(x.to)===l.id&&x.status==='sent');
     D.archive.push({rd,topic:tp,id:l.id,cls:l.cls,nick:l.nick,title:l.title||'',text:l.text,sentAt:l.sentAt,replyNick:rp?rp.nick:'',replyText:rp?rp.text:'',archivedAt:t})})}
-  Object.values(L).forEach(l=>{l.text='';l.chars=0;l.status='new';l.savedAt='';l.sentAt='';l.group='';l.partner='';l.title=''});
+  Object.values(L).forEach(l=>{l.text='';l.chars=0;l.status='new';l.savedAt='';l.sentAt='';l.group='';l.partner='';l.title='';l.nickChanged=''});
   Object.keys(R).forEach(k=>delete R[k]);D.topic=String(q.topic||'');store(D);return{archived:sent.length}}
  if(a==='tArchive'){return{items:D.archive.map(r=>({rd:r.rd,topic:r.topic,id:r.id,cls:r.cls,nick:r.nick,title:r.title,chars:(r.text||'').length,sentAt:r.sentAt}))}}
  if(a==='tDeleteArchived'){D.archive=D.archive.filter(r=>!(String(r.rd)===String(q.rd)&&String(r.id)===String(q.id)));store(D);return{ok:1}}
@@ -200,19 +206,32 @@ function handle(q){
 
  throw new Error('알 수 없는 요청')}
 // ★ 구글 Apps Script 웹앱 주소(/exec로 끝나는 것)를 여기에 붙여넣으세요. 비워두면 이 브라우저에만 저장(테스트용)됩니다.
-const API_URL='https://script.google.com/macros/s/AKfycbzQ2G4mbtP79v823q0x_zJdPgqLQgaWkBkKupyyJTo6-fN5YDF5n4kEfvDBgvSM8gpT3Q/exec';
+const API_URL='';
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
 async function api(action,d={}){
  if(!API_URL)return handle({action,...d});
- let r;try{r=await fetch(API_URL,{method:'POST',body:JSON.stringify({action,...d})})}catch(e){throw new Error('서버에 연결할 수 없어요. 인터넷을 확인해 주세요.')}
- const j=await r.json();if(j.error)throw new Error(j.error);return j}
+ // 접속이 몰려 잠깐 실패해도 자동으로 다시 시도 (최대 5번, 점점 길게 기다림)
+ for(let i=0;i<5;i++){
+  if(i)await wait(800*i+Math.random()*800);
+  try{
+   const r=await fetch(API_URL,{method:'POST',body:JSON.stringify({action,...d})});
+   const j=await r.json();
+   if(j.error){
+    if(i>0&&/이미 보낸/.test(j.error))return{ok:1};   // 앞선 시도가 이미 성공한 경우
+    throw Object.assign(new Error(j.error),{final:true});
+   }
+   return j;
+  }catch(e){if(e.final)throw e}
+ }
+ throw new Error('지금 접속자가 많아 연결이 늦어요. 잠시 후 다시 시도해 주세요.')}
 const auth=()=>({id:S.me.id,pin:S.me.pin});
 const teach=()=>({code:S.code});
 function intro(){
  app.innerHTML=`<div class="intro"><h1><span>우리</span><span>사이엔</span><span>글이</span><span>있다</span></h1><button class="join" id="jn">글쓰기 클럽에 가입하시겠습니까?</button></div>`;
  $('#jn').onclick=()=>go('login')}
-function go(p){clearInterval(S.timer);S.page=p;if(p==='avatar'&&S.me)S.avSnap=JSON.stringify(S.me.avatar);({intro,login,avatar,desk,write,read,teacher,archive})[p]()}
+function go(p){clearInterval(S.timer);S.page=p;if(p==='avatar'&&S.me)S.avSnap=JSON.stringify(S.me.avatar);({intro,login,avatar,desk,write,read,teacher,archive,nickpage})[p]()}
 function init(){S.me=ls('pp_me');let old=false;if(S.me){const ok=S.me.avatar&&S.me.avatar.v===4;old=!ok;S.me.avatar=ok?{...DEF,...S.me.avatar}:{...DEF}}if(S.me&&S.me.pin){go(old?'avatar':'desk');refresh()}else go('intro')}
-async function refresh(){try{const j=await api('me',auth());S.letter=j.letter;S.topic=j.topic;S.arch=j.archiveCount||0;if(S.page==='desk')desk()}catch(e){}}
+async function refresh(){try{const j=await api('me',auth());S.letter=j.letter;if(S.me&&j.letter&&j.letter.nick&&S.me.nick!==j.letter.nick){S.me.nick=j.letter.nick;ls('pp_me',S.me)}S.topic=j.topic;S.arch=j.archiveCount||0;if(S.page==='desk')desk()}catch(e){}}
 
 function login(){
  app.innerHTML=`<div class="panel"><h1>✍️ 글쓰기 클럽 가입</h1>
@@ -220,16 +239,15 @@ function login(){
  <p><input id="nm" maxlength="20" placeholder="이름 (선생님만 확인할 수 있어요)"></p>
  <p><input id="nick" maxlength="10" placeholder="닉네임 (실명 쓰지 않기)"></p>
  <p><input id="pin" type="password" inputmode="numeric" maxlength="4" placeholder="비밀번호 숫자 4자리 (나만 알기)"></p>
- <p><select id="cls"><option value="A">우리 반 코드: A반</option><option value="B">우리 반 코드: B반</option></select></p>
  <div class="msg" id="m">${esc(S.flash||'')}</div><div class="row"><button class="btn" id="go">입장하기</button></div>
  <hr><div class="row"><input id="tc" type="password" inputmode="numeric" placeholder="교사 코드" style="width:140px"><button class="btn" id="t">교사 입장</button></div>
  <div class="msg" id="tm"></div></div>`;
  S.flash='';
- $('#go').onclick=async()=>{const nm=$('#nm').value.trim(),n=$('#nick').value.trim(),pin=$('#pin').value.trim(),cls=$('#cls').value;
+ $('#go').onclick=async()=>{const nm=$('#nm').value.trim(),n=$('#nick').value.trim(),pin=$('#pin').value.trim();
   if(!nm||!n||!/^\d{4}$/.test(pin)){$('#m').textContent='이름, 닉네임, 숫자 4자리 비밀번호를 입력해 주세요';return}
-  const me={id:cls+'_'+[...n].map(c=>c.codePointAt(0).toString(16)).join('-'),nick:n,name:nm,cls,pin,avatar:{...DEF}};
+  const me={nick:n,name:nm,pin,avatar:{...DEF}};
   $('#m').textContent='입장 중...';
-  try{const j=await api('login',{...me});S.me=me;S.letter=j.letter;S.topic=j.topic;S.arch=j.archiveCount||0;
+  try{const j=await api('login',{...me});S.me=me;S.me.id=j.letter.id;S.me.nick=j.letter.nick;S.letter=j.letter;S.topic=j.topic;S.arch=j.archiveCount||0;
    if(j.returning&&j.letter.avatar&&j.letter.avatar.v===4){S.me.avatar=j.letter.avatar;ls('pp_me',S.me);go('desk')}
    else{ls('pp_me',S.me);go('avatar')}}catch(e){$('#m').textContent=e.message}};
  $('#t').onclick=async()=>{const c=$('#tc').value.trim();if(!c){$('#tm').textContent='교사 코드를 입력해 주세요';return}
@@ -260,17 +278,18 @@ function avatar(){
 function desk(){
  const L=S.letter,sent=L&&L.status==='sent',paired=L&&L.partner;
  app.innerHTML=`<div class="panel" style="position:relative">${S.arch>0?`<button class="envb" id="eb" title="이전 글">✉️</button><div class="envm" id="em" hidden><button class="btn" id="ar">📁 이전 글 모아보기</button></div>`:''}<div class="row"><b>${esc(S.me.nick)}</b>
- <button class="btn" id="av" style="padding:2px 8px">꾸미기</button><button class="btn" id="lo" style="padding:2px 8px">나가기</button></div>
+ <button class="btn" id="av" style="padding:2px 8px">꾸미기</button><button class="btn" id="nk" style="padding:2px 8px">닉네임 바꾸기</button><button class="btn" id="lo" style="padding:2px 8px">나가기</button></div>
  <div class="room"><div class="curtain"></div>
  <div class="desk"></div><div class="me">${av(S.me.avatar,9,true)}</div><div class="pencil"></div>
  <div class="act"><button class="btn" id="w">✏️ ${sent?'보낸 글 보기':'글 보내기'}</button></div>
  ${paired?`<div class="mail">${mailbox}<br><button class="btn red" id="r">📬 글 읽기</button></div>`:''}</div>
  <p class="msg" style="color:var(--ink)">${paired?'짝꿍이 정해졌어요! 우체통을 확인해요.':sent?'글을 보냈어요. 선생님이 짝꿍을 정해 줄 때까지 기다려요.':'이번 주 주제: '+esc(S.topic||'(아직 없음)')}</p></div>`;
- $('#av').onclick=()=>go('avatar');$('#w').onclick=()=>go('write');
+ $('#av').onclick=()=>go('avatar');$('#nk').onclick=()=>go('nickpage');$('#w').onclick=()=>go('write');
  if(S.arch>0){$('#eb').onclick=()=>{const m=$('#em');m.hidden=!m.hidden};$('#ar').onclick=()=>go('archive')}
  $('#lo').onclick=()=>{ls('pp_me',null);S.me=null;go('intro')};
  if(paired)$('#r').onclick=()=>go('read');
- S.timer=setInterval(refresh,10000)}
+ // 접속자가 많아도 서버가 버티도록 확인 주기를 느리게(약 45~70초), 화면이 보일 때만 확인
+ S.timer=setInterval(()=>{if(!document.hidden)refresh()},45000+Math.random()*25000)}
 
 function editor(o){
  const d=o.data||{};let sent=d.status==='sent',locked=sent||(d.status==='draft'&&!!d.text);
@@ -282,10 +301,13 @@ function editor(o){
  <button class="btn" id="sv">저장하기</button><button class="btn" id="ed">수정하기</button>
  <button class="btn red" id="sd">보내기</button><button class="btn" id="bk">돌아가기</button></div></div>`;
  const t=$('#t');t.value=d.text||'';const ti=o.title?$('#ti'):null;if(ti)ti.value=d.title||'';
+ const dk='pp_draft_'+o.save+'_'+S.me.id;
+ if(!locked){const bk=ls(dk);if(bk&&!t.value&&bk.text){t.value=bk.text;if(ti&&!ti.value)ti.value=bk.title||'';setTimeout(()=>{$('#m').textContent='저장 전에 쓰던 글을 복구했어요'},0)}}
+ const keep=()=>{if(!locked)ls(dk,{text:t.value,title:ti?ti.value:''})};t.addEventListener('input',keep);if(ti)ti.addEventListener('input',keep);
  const sync=()=>{t.readOnly=locked;if(ti)ti.readOnly=locked;$('#sv').disabled=locked;$('#ed').disabled=!locked||sent;$('#sd').disabled=!locked||sent;
   if(sent)$('#m').textContent='보냈어요! ('+fmt(d.sentAt)+')'};sync();
  const save=async st=>{$('#m').textContent='저장 중...';
-  try{await api(o.save,{...auth(),title:ti?ti.value.trim():'',text:t.value,status:st,avatar:S.me.avatar});return true}
+  try{await api(o.save,{...auth(),title:ti?ti.value.trim():'',text:t.value,status:st,avatar:S.me.avatar});ls(dk,null);return true}
   catch(e){$('#m').textContent=e.message;return false}};
  $('#sv').onclick=async()=>{if(ti&&!ti.value.trim()){$('#m').textContent='제목을 입력해 주세요';return}
   if(!t.value.trim()){$('#m').textContent='글을 써 주세요';return}
@@ -316,6 +338,20 @@ async function read(){
  $('#bk').onclick=()=>go('desk');
  $('#rp').onclick=()=>editor({save:'saveReply',topic:'답장: '+(p?p.nick:'')+'에게 (답장은 한 번만 보낼 수 있어요)',data:mine})}
 
+function nickpage(){
+ const used=S.letter&&S.letter.nickChanged;
+ app.innerHTML=`<div class="panel"><h2>🏷️ 닉네임 바꾸기</h2>
+ <p class="msg" style="color:var(--ink)">닉네임은 주제마다 한 번 바꿀 수 있어요.<br>지금 닉네임: <b>${esc(S.me.nick)}</b></p>
+ ${used?'<p class="msg">이번 주제에서는 이미 바꿨어요. 새 주제가 시작되면 다시 바꿀 수 있어요.</p>':`<p><input id="nn" maxlength="10" placeholder="새 닉네임 (실명 쓰지 않기)"></p>
+ <div class="row"><button class="btn red" id="nok">바꾸기</button></div>`}
+ <div class="msg" id="m"></div><div class="row"><button class="btn" id="nbk">← 홈으로</button></div></div>`;
+ $('#nbk').onclick=()=>{go('desk');refresh()};
+ if(!used){let c=false;$('#nok').onclick=async()=>{const v=$('#nn').value.trim();if(!v){$('#m').textContent='새 닉네임을 입력해 주세요';return}
+  if(v===S.me.nick){$('#m').textContent='지금과 같은 닉네임이에요';return}
+  if(!c){c=true;$('#nok').textContent='정말 바꿀까요? (한 번 더)';$('#m').textContent='이번 주제에서는 한 번만 바꿀 수 있어요.';return}
+  $('#m').textContent='바꾸는 중...';
+  try{const j=await api('changeNick',{...auth(),newNick:v});S.letter=j.letter;S.me.nick=j.letter.nick;ls('pp_me',S.me);go('desk');refresh()}catch(e){c=false;$('#nok').textContent='바꾸기';$('#m').textContent=e.message}}}}
+
 async function archive(){
  const head=(t,back)=>`<div class="panel"><div class="row"><button class="btn" id="bk">${back}</button><h2 style="margin:0">${t}</h2></div>`;
  app.innerHTML='<div class="panel"><p class="msg">불러오는 중...</p></div>';
@@ -327,11 +363,11 @@ async function archive(){
  const showRound=async(rd,f)=>{
   app.innerHTML='<div class="panel"><p class="msg">불러오는 중...</p></div>';
   let j;try{j=await api('archiveRound',{...auth(),rd})}catch(e){j={items:[]}}
-  app.innerHTML=head('📁 '+esc(f?f.topic:''),'← 폴더 목록')+`<div class="row" style="align-items:flex-start">${j.items.map((it,i)=>`<button class="fold" data-i="${i}"><b>📝</b>${esc(it.title||'(제목 없음)')}<br><small>${esc(it.nick)} · ${esc(it.cls)}반</small></button>`).join('')||'<p class="msg" style="color:var(--ink)">글이 없어요</p>'}</div></div>`;
+  app.innerHTML=head('📁 '+esc(f?f.topic:''),'← 폴더 목록')+`<div class="row" style="align-items:flex-start">${j.items.map((it,i)=>`<button class="fold" data-i="${i}"><b>📝</b>${esc(it.title||'(제목 없음)')}<br><small>${esc(it.nick)}</small></button>`).join('')||'<p class="msg" style="color:var(--ink)">글이 없어요</p>'}</div></div>`;
   $('#bk').onclick=showFolders;
   app.querySelectorAll('.fold').forEach(b=>b.onclick=()=>showLetter(j.items[+b.dataset.i],()=>showRound(rd,f)))};
  const showLetter=(it,back)=>{
-  app.innerHTML=head('📝 글 보기','← 목록')+`<div class="paper"><div class="topic">${esc(it.topic||'')}</div><div class="ttl" style="border-bottom:2px dashed #888;padding:6px 0">${esc(it.title||'(제목 없음)')}</div><div class="nick">보낸 사람: ${esc(it.nick)} (${esc(it.cls)}반)</div><div class="read">${esc(it.text)}</div></div>${it.replyText?`<h2>💌 ${esc(it.replyNick)}의 답장</h2><div class="paper"><div class="read">${esc(it.replyText)}</div></div>`:''}</div>`;
+  app.innerHTML=head('📝 글 보기','← 목록')+`<div class="paper"><div class="topic">${esc(it.topic||'')}</div><div class="ttl" style="border-bottom:2px dashed #888;padding:6px 0">${esc(it.title||'(제목 없음)')}</div><div class="nick">보낸 사람: ${esc(it.nick)}</div><div class="read">${esc(it.text)}</div></div>${it.replyText?`<h2>💌 ${esc(it.replyNick)}의 답장</h2><div class="paper"><div class="read">${esc(it.replyText)}</div></div>`:''}</div>`;
   $('#bk').onclick=back};
  showFolders()}
 
@@ -342,7 +378,7 @@ async function archAdmin(){
  const fs=Object.values(F).sort((a,b)=>b.rd-a.rd);
  app.innerHTML=`<div class="panel"><h2>보관함 관리</h2><div class="row"><button class="btn" id="bk3">← 교사 페이지</button></div><div class="msg" id="m"></div>
  ${fs.map(f=>`<div class="paper" style="margin:10px 0;font-size:1rem"><div class="row" style="justify-content:space-between"><b>📁 ${esc(f.topic)} (${f.list.length}편)</b><button class="btn xf" data-rd="${esc(f.rd)}" style="padding:2px 8px">폴더 삭제</button></div>
- <div class="tw"><table><tr><th>반</th><th>닉네임</th><th>제목</th><th>글자수</th><th>제출</th><th></th></tr>${f.list.map(i=>`<tr><td>${esc(i.cls)}</td><td>${esc(i.nick)}</td><td>${esc(i.title||'(제목 없음)')}</td><td>${i.chars}</td><td>${esc(i.sentAt||'-')}</td><td><button class="btn xl" data-rd="${esc(i.rd)}" data-id="${esc(i.id)}" style="padding:0 8px">글 삭제</button></td></tr>`).join('')}</table></div></div>`).join('')||'<p class="msg" style="color:var(--ink)">보관된 폴더가 없어요</p>'}</div>`;
+ <div class="tw"><table><tr><th>닉네임</th><th>제목</th><th>글자수</th><th>제출</th><th></th></tr>${f.list.map(i=>`<tr><td>${esc(i.nick)}</td><td>${esc(i.title||'(제목 없음)')}</td><td>${i.chars}</td><td>${esc(i.sentAt||'-')}</td><td><button class="btn xl" data-rd="${esc(i.rd)}" data-id="${esc(i.id)}" style="padding:0 8px">글 삭제</button></td></tr>`).join('')}</table></div></div>`).join('')||'<p class="msg" style="color:var(--ink)">보관된 폴더가 없어요</p>'}</div>`;
  $('#bk3').onclick=teacher;
  const two=(b,label,fn)=>{let c=false;b.onclick=async()=>{if(!c){c=true;b.textContent='정말?';setTimeout(()=>{c=false;b.textContent=label},3000);return}
   try{await fn();archAdmin()}catch(e){$('#m').textContent=e.message}}};
@@ -354,8 +390,8 @@ function accounts(list){
  <p class="msg" style="color:var(--ink)">지우고 싶은 계정(시험용 등)을 체크하고 '선택 삭제'를 누르세요. 그 학생의 글과 답장도 함께 지워져요.</p>
  <div class="row"><button class="btn" id="sa">전체 선택</button><button class="btn red" id="sd">선택 삭제</button><button class="btn" id="bk2">← 교사 페이지</button></div>
  <div class="msg" id="m"></div>
- <div class="tw"><table><tr><th></th><th>반</th><th>이름</th><th>닉네임</th><th>상태</th><th>글자수</th></tr>
- ${list.map(l=>`<tr><td><input type="checkbox" class="ck" value="${esc(l.id)}"></td><td>${esc(l.cls)}</td><td>${esc(l.name||'')}</td><td>${esc(l.nick)}</td><td>${l.status==='sent'?'제출':l.status==='saved'?'저장':'가입만'}</td><td>${l.chars||0}</td></tr>`).join('')||'<tr><td colspan="6">계정이 없어요</td></tr>'}</table></div></div>`;
+ <div class="tw"><table><tr><th></th><th>이름</th><th>닉네임</th><th>상태</th><th>글자수</th></tr>
+ ${list.map(l=>`<tr><td><input type="checkbox" class="ck" value="${esc(l.id)}"></td><td>${esc(l.name||'')}</td><td>${esc(l.nick)}</td><td>${l.status==='sent'?'제출':l.status==='saved'?'저장':'가입만'}</td><td>${l.chars||0}</td></tr>`).join('')||'<tr><td colspan="5">계정이 없어요</td></tr>'}</table></div></div>`;
  const cks=()=>[...app.querySelectorAll('.ck')];
  $('#bk2').onclick=teacher;
  $('#sa').onclick=()=>{const all=cks().every(c=>c.checked);cks().forEach(c=>c.checked=!all)};
@@ -379,9 +415,9 @@ async function teacher(){
  <div class="row"><button class="btn" id="rf">새로고침</button><button class="btn" id="ag">글자 수로 자동 나누기</button><button class="btn red" id="as">배정하기</button><button class="btn" id="ac">계정 관리(삭제)</button><button class="btn" id="ab">보관함 관리</button><button class="btn" id="da">전체 삭제</button><button class="btn" id="bk">나가기</button></div>
  <div class="msg" id="m">${assigned?'이미 배정되었습니다. 다시 누르면 새로 배정됩니다.':'표에서 학생마다 짧은 글/긴 글 그룹을 고른 뒤(자동 나누기 버튼도 있어요) 배정하기를 누르면, 같은 그룹 안에서 반 상관없이 무작위로 짝이 정해집니다.'}</div>
  <p style="text-align:center;font-size:.85rem">전체 기록은 연결된 구글 시트의 letters / replies 탭에서도 볼 수 있어요.</p>
- <div class="tw"><table><tr><th>그룹</th><th>반</th><th>이름</th><th>닉네임</th><th>글자수</th><th>저장</th><th>제출</th><th>짝꿍</th><th>제목</th><th>내용</th><th>답장</th><th>삭제</th></tr>
+ <div class="tw"><table><tr><th>그룹</th><th>이름</th><th>닉네임</th><th>글자수</th><th>저장</th><th>제출</th><th>짝꿍</th><th>제목</th><th>내용</th><th>답장</th><th>삭제</th></tr>
  ${ls_.map(l=>{const pn=ls_.find(x=>x.id===l.partner),rp=rs.find(x=>x.id===l.id);
- return `<tr><td>${l.status==='sent'?`<select class="gs" data-id="${esc(l.id)}"><option value="">미정</option><option${l.group==='짧은 글'?' selected':''}>짧은 글</option><option${l.group==='긴 글'?' selected':''}>긴 글</option></select>`:'-'}</td><td>${esc(l.cls)}</td><td>${esc(l.name||'')}</td><td>${esc(l.nick)}</td><td>${l.chars||0}</td><td>${esc(l.savedAt)||'-'}</td><td>${esc(l.sentAt)||'-'}</td><td>${pn?esc(pn.nick):'-'}</td><td>${esc(l.title||'')}</td><td style="min-width:200px">${esc(l.text)}</td><td>${rp?esc(rp.text)+'<br>('+esc(rp.sentAt||'미제출')+')':'-'}</td><td><button class="btn dl" data-id="${esc(l.id)}">삭제</button></td></tr>`}).join('')}</table></div></div>`;
+ return `<tr><td>${l.status==='sent'?`<select class="gs" data-id="${esc(l.id)}"><option value="">미정</option><option${l.group==='짧은 글'?' selected':''}>짧은 글</option><option${l.group==='긴 글'?' selected':''}>긴 글</option></select>`:'-'}</td><td>${esc(l.name||'')}</td><td>${esc(l.nick)}</td><td>${l.chars||0}</td><td>${esc(l.savedAt)||'-'}</td><td>${esc(l.sentAt)||'-'}</td><td>${pn?esc(pn.nick):'-'}</td><td>${esc(l.title||'')}</td><td style="min-width:200px">${esc(l.text)}</td><td>${rp?esc(rp.text)+'<br>('+esc(rp.sentAt||'미제출')+')':'-'}</td><td><button class="btn dl" data-id="${esc(l.id)}">삭제</button></td></tr>`}).join('')}</table></div></div>`;
  $('#bk').onclick=()=>go('login');$('#rf').onclick=teacher;$('#ac').onclick=()=>accounts(j.letters);$('#ab').onclick=archAdmin;
  const del=async(ids)=>{$('#m').textContent='삭제 중...';try{const r=await api('tDelete',{...teach(),ids});$('#m').textContent=r.deleted+'명의 기록을 삭제했어요';setTimeout(teacher,700)}catch(e){$('#m').textContent=e.message}};
  app.querySelectorAll('.dl').forEach(b=>{let c=false;b.onclick=()=>{if(!c){c=true;b.textContent='정말?';setTimeout(()=>{c=false;b.textContent='삭제'},3000);return}del([b.dataset.id])}});
@@ -398,5 +434,6 @@ async function teacher(){
  let ar=!assigned;
  $('#as').onclick=async()=>{if(!ar){ar=true;$('#m').textContent='이미 배정되어 있어요. 새로 배정하려면 배정하기를 한 번 더 누르세요.';return}$('#m').textContent='배정 중...';
   try{const r=await api('assign',teach());$('#m').textContent=r.pairs+'쌍을 배정했어요!'+(r.alone?' (짝이 없는 학생 '+r.alone+'명 — 그룹 인원이 홀수예요)':'');setTimeout(teacher,900)}catch(e){$('#m').textContent=e.message}}}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&S.page==='desk'&&S.me)refresh()});
 init();
 </script></body></html>
